@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Onyx AV Hub</string>
+    <string name="nav_audio_hub">Audio Hub</string>
+    <string name="nav_player">Player</string>
+</resources>

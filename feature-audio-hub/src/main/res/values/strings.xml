@@ -1,0 +1,7 @@
+<resources>
+    <string name="audio_hub_tile_label">Onyx Audio</string>
+    <string name="audio_hub_notification_channel_name">Audio Enhancement</string>
+    <string name="audio_hub_notification_title">Onyx Audio Hub</string>
+    <string name="audio_hub_notification_text_on">Enhancement active</string>
+    <string name="audio_hub_notification_text_off">Enhancement paused</string>
+</resources>
