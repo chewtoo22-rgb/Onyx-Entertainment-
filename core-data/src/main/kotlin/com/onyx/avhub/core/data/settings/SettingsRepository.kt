@@ -19,6 +19,7 @@ private object Keys {
     val VIDEO_QUALITY_MODE = stringPreferencesKey("video_quality_mode")
     val PREFER_HARDWARE_DECODING = booleanPreferencesKey("prefer_hardware_decoding")
     val HDR_TONE_MAPPING_ENABLED = booleanPreferencesKey("hdr_tone_mapping_enabled")
+    val HI_RES_AUDIO_ENABLED = booleanPreferencesKey("hi_res_audio_enabled")
 }
 
 @Singleton
@@ -36,6 +37,7 @@ class SettingsRepository @Inject constructor(
                 ?: VideoQualityMode.BALANCED,
             preferHardwareDecoding = prefs[Keys.PREFER_HARDWARE_DECODING] ?: true,
             hdrToneMappingEnabled = prefs[Keys.HDR_TONE_MAPPING_ENABLED] ?: true,
+            hiResAudioEnabled = prefs[Keys.HI_RES_AUDIO_ENABLED] ?: false,
         )
     }
 
@@ -65,5 +67,9 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setHdrToneMappingEnabled(enabled: Boolean) {
         dataStore.edit { it[Keys.HDR_TONE_MAPPING_ENABLED] = enabled }
+    }
+
+    suspend fun setHiResAudioEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.HI_RES_AUDIO_ENABLED] = enabled }
     }
 }

@@ -11,4 +11,6 @@ data class OnyxSettings(
     val videoQualityMode: VideoQualityMode = VideoQualityMode.BALANCED,
     val preferHardwareDecoding: Boolean = true,
     val hdrToneMappingEnabled: Boolean = true,
+    /** Enables Media3's floating-point audio output path for bit-perfect/Hi-Res playback. */
+    val hiResAudioEnabled: Boolean = false,
 )

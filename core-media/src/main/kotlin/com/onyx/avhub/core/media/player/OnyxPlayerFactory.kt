@@ -27,10 +27,14 @@ class OnyxPlayerFactory @Inject constructor(
         context: Context,
         decoderPreference: (mimeType: String) -> DecoderPreference = { DecoderPreference.AUTO },
         videoEnhancementParams: VideoEnhancementParams = VideoEnhancementParams(),
+        enableHiResFloatAudio: Boolean = false,
     ): ExoPlayer {
         val renderersFactory = DefaultRenderersFactory(context)
             .setMediaCodecSelector(OnyxMediaCodecSelector(decoderPreference))
             .setEnableDecoderFallback(true)
+            // Bit-perfect/Hi-Res output: bypasses ExoPlayer's integer audio processing chain
+            // (see DefaultRenderersFactory docs) in favor of a float PCM path to the sink.
+            .setEnableAudioFloatOutput(enableHiResFloatAudio)
 
         return ExoPlayer.Builder(context, renderersFactory)
             .build()

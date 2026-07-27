@@ -1,11 +1,16 @@
 package com.onyx.avhub.feature.audiohub.ui
 
+import android.content.Context
+import android.os.VibrationEffect
+import android.os.Vibrator
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.onyx.avhub.core.data.db.entity.EqPresetEntity
 import com.onyx.avhub.core.data.repository.PresetRepository
 import com.onyx.avhub.core.data.settings.SettingsRepository
+import com.onyx.avhub.feature.audiohub.effect.SystemAudioVisualizerCapture
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -22,14 +27,30 @@ data class AudioHubUiState(
         get() = presets.find { it.id == activePresetId } ?: presets.firstOrNull()
 }
 
+private const val BASS_BAND_INDEX = 1
+private const val BASS_HIT_THRESHOLD = 0.82f
+private const val BASS_HIT_COOLDOWN_MS = 180L
+private const val HAPTIC_PULSE_MS = 18L
+
 @HiltViewModel
 class AudioHubViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val settingsRepository: SettingsRepository,
     private val presetRepository: PresetRepository,
+    private val visualizerCapture: SystemAudioVisualizerCapture,
 ) : ViewModel() {
+
+    private val vibrator: Vibrator? = context.getSystemService(Vibrator::class.java)
+    private var lastHapticPulseAtMs = 0L
+
+    val spectrumBands: StateFlow<FloatArray> = visualizerCapture.bands
 
     init {
         viewModelScope.launch { presetRepository.ensureBuiltInPresetsSeeded() }
+        visualizerCapture.start()
+        viewModelScope.launch {
+            visualizerCapture.bands.collect { bands -> maybePulseOnBassHit(bands) }
+        }
     }
 
     val uiState: StateFlow<AudioHubUiState> = combine(
@@ -62,5 +83,19 @@ class AudioHubViewModel @Inject constructor(
             val savedId = presetRepository.savePreset(customized)
             settingsRepository.setActivePresetId(savedId)
         }
+    }
+
+    /** Fires a short haptic pulse on strong bass hits, throttled so it reads as a beat, not a buzz. */
+    private fun maybePulseOnBassHit(bands: FloatArray) {
+        if (bands.size <= BASS_BAND_INDEX || bands[BASS_BAND_INDEX] < BASS_HIT_THRESHOLD) return
+        val now = System.currentTimeMillis()
+        if (now - lastHapticPulseAtMs < BASS_HIT_COOLDOWN_MS) return
+        lastHapticPulseAtMs = now
+        vibrator?.vibrate(VibrationEffect.createOneShot(HAPTIC_PULSE_MS, VibrationEffect.DEFAULT_AMPLITUDE))
+    }
+
+    override fun onCleared() {
+        visualizerCapture.stop()
+        super.onCleared()
     }
 }

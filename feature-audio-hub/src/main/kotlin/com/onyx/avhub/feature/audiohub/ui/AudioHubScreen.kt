@@ -1,9 +1,11 @@
 package com.onyx.avhub.feature.audiohub.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -23,12 +25,16 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.onyx.avhub.core.data.db.entity.EqPresetEntity
 
+private const val BASS_BAND_INDEX = 1
+
 @Composable
 fun AudioHubScreen(viewModel: AudioHubViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsState()
+    val spectrumBands by viewModel.spectrumBands.collectAsState()
 
     AudioHubContent(
         uiState = uiState,
+        spectrumBands = spectrumBands,
         onHubEnabledChange = viewModel::setHubEnabled,
         onPresetSelected = viewModel::selectPreset,
         onBandGainChange = { bandIndex, gainDb ->
@@ -40,6 +46,7 @@ fun AudioHubScreen(viewModel: AudioHubViewModel = hiltViewModel()) {
 @Composable
 private fun AudioHubContent(
     uiState: AudioHubUiState,
+    spectrumBands: FloatArray,
     onHubEnabledChange: (Boolean) -> Unit,
     onPresetSelected: (Long) -> Unit,
     onBandGainChange: (bandIndex: Int, gainDb: Float) -> Unit,
@@ -58,6 +65,17 @@ private fun AudioHubContent(
                 )
             }
             Switch(checked = uiState.hubEnabled, onCheckedChange = onHubEnabledChange)
+        }
+
+        Box(modifier = Modifier.fillMaxWidth().height(160.dp).padding(top = 16.dp)) {
+            AmbientGlow(
+                bassIntensity = spectrumBands.getOrElse(BASS_BAND_INDEX) { 0f },
+                modifier = Modifier.fillMaxWidth().height(160.dp),
+            )
+            SpectrumVisualizerView(
+                bands = spectrumBands,
+                modifier = Modifier.fillMaxWidth().height(160.dp).padding(horizontal = 8.dp),
+            )
         }
 
         LazyRow(
