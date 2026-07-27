@@ -53,11 +53,12 @@ import com.onyx.avhub.core.media.codec.OnyxCodecs
 @Composable
 fun PlayerScreen(viewModel: PlayerViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsState()
+    val player by viewModel.playerState.collectAsState()
     var isImmersive by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         ComparisonVideoSurface(
-            player = viewModel.player,
+            player = player,
             splitPosition = uiState.splitPosition,
             onSplitPositionChange = viewModel::setSplitPosition,
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
@@ -119,12 +120,10 @@ private fun ComparisonVideoSurface(
     ) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
-            factory = { context ->
-                PlayerView(context).apply {
-                    this.player = player
-                    useController = true
-                }
-            },
+            factory = { context -> PlayerView(context).apply { useController = true } },
+            // Rebinds whenever `player` changes reference (e.g. Hi-Res audio toggle rebuilds the
+            // ExoPlayer under the hood) — AndroidView only re-invokes `update`, not `factory`.
+            update = { view -> view.player = player },
         )
 
         val handleOffset = with(LocalDensity.current) { (widthPx * splitPosition).toDp() }
@@ -179,7 +178,7 @@ private fun OutputSettingsSection(hiResAudioEnabled: Boolean, onHiResAudioEnable
         Column {
             Text("Hi-Res / Bit-Perfect Output", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Floating-point audio path, bypasses integer processing. Applies next playback.",
+                "Floating-point audio path, bypasses integer processing.",
                 style = MaterialTheme.typography.bodyMedium,
             )
         }

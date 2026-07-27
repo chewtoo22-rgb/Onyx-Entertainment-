@@ -20,7 +20,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 data class PlayerUiState(
     val isPlaying: Boolean = false,
@@ -33,36 +32,47 @@ data class PlayerUiState(
 
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
-    @ApplicationContext context: Context,
-    playerFactory: OnyxPlayerFactory,
+    @ApplicationContext private val context: Context,
+    private val playerFactory: OnyxPlayerFactory,
     private val settingsRepository: SettingsRepository,
     private val comparisonState: VideoComparisonState,
 ) : ViewModel() {
 
     private val decoderPreferences = mutableMapOf<String, DecoderPreference>()
 
-    // DefaultRenderersFactory's audio sink config is fixed at ExoPlayer construction time and
-    // can't be hot-swapped, so we read the persisted preference once up front; toggling it later
-    // (see setHiResAudioEnabled) applies the next time a player is created rather than instantly.
-    private val initialHiResAudioEnabled = runBlocking { settingsRepository.settings.first().hiResAudioEnabled }
+    // Built with a safe default so construction never blocks on a DataStore read; the persisted
+    // preference (if different) is applied asynchronously right after via applyHiResAudioSetting,
+    // which also backs setHiResAudioEnabled — DefaultRenderersFactory's audio sink config is
+    // fixed at ExoPlayer construction time, so "applying" the setting means swapping the player.
+    private var player: ExoPlayer = createPlayer(enableHiResFloatAudio = false)
 
-    val player: ExoPlayer = playerFactory.create(
-        context = context,
-        decoderPreference = { mimeType -> decoderPreferences[mimeType] ?: DecoderPreference.AUTO },
-        enableHiResFloatAudio = initialHiResAudioEnabled,
-    )
+    private val _playerState = MutableStateFlow(player)
+    val playerState: StateFlow<ExoPlayer> = _playerState.asStateFlow()
 
     private val _uiState = MutableStateFlow(
         PlayerUiState(
             splitPosition = comparisonState.splitPosition,
             sharpenStrength = comparisonState.sharpenStrength,
-            hiResAudioEnabled = initialHiResAudioEnabled,
         ),
     )
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
     init {
-        player.addListener(object : Player.Listener {
+        attachListeners(player)
+        viewModelScope.launch {
+            val persistedHiRes = settingsRepository.settings.first().hiResAudioEnabled
+            if (persistedHiRes) applyHiResAudioSetting(persistedHiRes)
+        }
+    }
+
+    private fun createPlayer(enableHiResFloatAudio: Boolean): ExoPlayer = playerFactory.create(
+        context = context,
+        decoderPreference = { mimeType -> decoderPreferences[mimeType] ?: DecoderPreference.AUTO },
+        enableHiResFloatAudio = enableHiResFloatAudio,
+    )
+
+    private fun attachListeners(target: ExoPlayer) {
+        target.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _uiState.update { it.copy(isPlaying = isPlaying) }
             }
@@ -110,8 +120,36 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun setHiResAudioEnabled(enabled: Boolean) {
-        _uiState.update { it.copy(hiResAudioEnabled = enabled) }
         viewModelScope.launch { settingsRepository.setHiResAudioEnabled(enabled) }
+        applyHiResAudioSetting(enabled)
+    }
+
+    /**
+     * Media3's float-output path can only be configured when the [ExoPlayer] is built, so
+     * actually applying a toggle means building a replacement player carrying over the current
+     * item/position/play-state, publishing it via [playerState] so the UI rebinds
+     * `PlayerView.player`, and releasing the old one only once the new one is ready.
+     */
+    private fun applyHiResAudioSetting(enabled: Boolean) {
+        if (_uiState.value.hiResAudioEnabled == enabled) return
+
+        val previousPlayer = player
+        val currentItem = previousPlayer.currentMediaItem
+        val resumePositionMs = previousPlayer.currentPosition
+        val wasPlaying = previousPlayer.isPlaying
+
+        val newPlayer = createPlayer(enableHiResFloatAudio = enabled)
+        attachListeners(newPlayer)
+        if (currentItem != null) {
+            newPlayer.setMediaItem(currentItem, resumePositionMs)
+            newPlayer.prepare()
+            newPlayer.playWhenReady = wasPlaying
+        }
+
+        player = newPlayer
+        _playerState.value = newPlayer
+        previousPlayer.release()
+        _uiState.update { it.copy(hiResAudioEnabled = enabled) }
     }
 
     override fun onCleared() {

@@ -17,13 +17,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.onyx.avhub.feature.audiohub.ui.AudioHubScreen
+import com.onyx.avhub.feature.audiohub.ui.AudioHubViewModel
 import com.onyx.avhub.feature.player.ui.PlayerScreen
+import com.onyx.avhub.feature.player.ui.PlayerViewModel
 
 /**
  * Above this width, Audio Hub and Player are shown side-by-side instead of behind bottom
@@ -36,27 +39,35 @@ private const val TWO_PANE_MIN_WIDTH_DP = 600
 @Composable
 fun OnyxNavHost() {
     val isWideScreen = LocalConfiguration.current.screenWidthDp >= TWO_PANE_MIN_WIDTH_DP
+
+    // Hoisted here — directly under the Activity's composition root — so switching between
+    // the compact (NavBackStackEntry-scoped) and wide (plain composition-scoped) layouts below
+    // doesn't tear down and recreate these ViewModels, which would lose the EQ/hub state and
+    // release/recreate the ExoPlayer out from under the user.
+    val audioHubViewModel: AudioHubViewModel = hiltViewModel()
+    val playerViewModel: PlayerViewModel = hiltViewModel()
+
     if (isWideScreen) {
-        TwoPaneLayout()
+        TwoPaneLayout(audioHubViewModel, playerViewModel)
     } else {
-        CompactNavHost()
+        CompactNavHost(audioHubViewModel, playerViewModel)
     }
 }
 
 @Composable
-private fun TwoPaneLayout() {
+private fun TwoPaneLayout(audioHubViewModel: AudioHubViewModel, playerViewModel: PlayerViewModel) {
     Row(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
-            AudioHubScreen()
+            AudioHubScreen(viewModel = audioHubViewModel)
         }
         Box(modifier = Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
-            PlayerScreen()
+            PlayerScreen(viewModel = playerViewModel)
         }
     }
 }
 
 @Composable
-private fun CompactNavHost() {
+private fun CompactNavHost(audioHubViewModel: AudioHubViewModel, playerViewModel: PlayerViewModel) {
     val navController = rememberNavController()
 
     Scaffold(
@@ -88,8 +99,8 @@ private fun CompactNavHost() {
             startDestination = OnyxDestination.AUDIO_HUB.route,
             modifier = Modifier.padding(innerPadding),
         ) {
-            composable(OnyxDestination.AUDIO_HUB.route) { AudioHubScreen() }
-            composable(OnyxDestination.PLAYER.route) { PlayerScreen() }
+            composable(OnyxDestination.AUDIO_HUB.route) { AudioHubScreen(viewModel = audioHubViewModel) }
+            composable(OnyxDestination.PLAYER.route) { PlayerScreen(viewModel = playerViewModel) }
         }
     }
 }

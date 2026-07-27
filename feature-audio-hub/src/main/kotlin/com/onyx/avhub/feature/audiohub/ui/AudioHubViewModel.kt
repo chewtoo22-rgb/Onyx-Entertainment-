@@ -42,12 +42,12 @@ class AudioHubViewModel @Inject constructor(
 
     private val vibrator: Vibrator? = context.getSystemService(Vibrator::class.java)
     private var lastHapticPulseAtMs = 0L
+    private var isCaptureActive = false
 
     val spectrumBands: StateFlow<FloatArray> = visualizerCapture.bands
 
     init {
         viewModelScope.launch { presetRepository.ensureBuiltInPresetsSeeded() }
-        visualizerCapture.start()
         viewModelScope.launch {
             visualizerCapture.bands.collect { bands -> maybePulseOnBassHit(bands) }
         }
@@ -66,6 +66,18 @@ class AudioHubViewModel @Inject constructor(
 
     fun setHubEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsRepository.setSystemAudioHubEnabled(enabled) }
+    }
+
+    /**
+     * Starts/stops the [Visualizer][android.media.audiofx.Visualizer] capture. The caller
+     * (the Compose screen) is responsible for only passing `true` when both the hub is enabled
+     * and `RECORD_AUDIO` has actually been granted — disabling the hub must stop capture (and
+     * with it, the bass-triggered haptics), not just hide the UI for it.
+     */
+    fun setVisualizerCaptureActive(active: Boolean) {
+        if (active == isCaptureActive) return
+        isCaptureActive = active
+        if (active) visualizerCapture.start() else visualizerCapture.stop()
     }
 
     fun selectPreset(presetId: Long) {
@@ -95,7 +107,7 @@ class AudioHubViewModel @Inject constructor(
     }
 
     override fun onCleared() {
-        visualizerCapture.stop()
+        setVisualizerCaptureActive(false)
         super.onCleared()
     }
 }
