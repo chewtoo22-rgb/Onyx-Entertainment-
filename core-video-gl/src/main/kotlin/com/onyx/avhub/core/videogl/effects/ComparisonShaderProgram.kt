@@ -8,21 +8,22 @@ import androidx.media3.common.util.GlUtil
 import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BaseGlShaderProgram
+import com.onyx.avhub.core.videogl.pipeline.VideoComparisonState
 
 /**
- * A full-screen-quad shader program that copies the input frame to the output unchanged.
- *
- * This is the Phase 3 scaffold proving the decode -> GL effects -> render chain works
- * end-to-end. Phase 4 filters (scaling, sharpen, color grade, tone-map) are implemented as
- * additional [BaseGlShaderProgram]s using this same quad-drawing pattern, with their own
- * fragment shaders reading [VideoEnhancementParams][com.onyx.avhub.core.videogl.pipeline.VideoEnhancementParams]
- * uniforms instead of a plain passthrough.
+ * Before/after comparison pass: left of the live [VideoComparisonState.splitPosition] renders
+ * the frame untouched, right of it renders a real unsharp-mask sharpen (4-neighbor Laplacian),
+ * with a thin divider line at the split. One shader, one texture sample of the source per
+ * output pixel plus 4 neighbor samples on the "after" side — real image processing, not a
+ * canned crossfade between two pre-rendered copies.
  */
 @OptIn(markerClass = [UnstableApi::class])
-class IdentityShaderProgram :
-    BaseGlShaderProgram(/* useHighPrecisionColorComponents= */ false, /* texturePoolCapacity= */ 1) {
+class ComparisonShaderProgram(
+    private val state: VideoComparisonState,
+) : BaseGlShaderProgram(/* useHighPrecisionColorComponents= */ false, /* texturePoolCapacity= */ 1) {
 
     private var glProgram: GlProgram? = null
+    private var texelSize = floatArrayOf(0f, 0f)
 
     override fun configure(inputWidth: Int, inputHeight: Int): Size {
         if (glProgram == null) {
@@ -32,6 +33,7 @@ class IdentityShaderProgram :
                 throw VideoFrameProcessingException(e)
             }
         }
+        texelSize = floatArrayOf(1f / inputWidth, 1f / inputHeight)
         return Size(inputWidth, inputHeight)
     }
 
@@ -43,6 +45,9 @@ class IdentityShaderProgram :
             program.setSamplerTexIdUniform("uTexSampler", inputTexId, /* texUnitIndex= */ 0)
             program.setBufferAttribute("aPosition", QUAD_POSITIONS, /* size= */ 2)
             program.setBufferAttribute("aTexCoords", QUAD_TEX_COORDS, /* size= */ 2)
+            program.setFloatUniform("uSplitX", state.splitPosition)
+            program.setFloatUniform("uSharpenAmount", state.sharpenStrength)
+            program.setFloatsUniform("uTexelSize", texelSize)
             program.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
             GlUtil.checkGlError()
@@ -61,7 +66,6 @@ class IdentityShaderProgram :
     }
 
     private companion object {
-        // Full-screen triangle strip in NDC space, paired with matching texture coordinates.
         val QUAD_POSITIONS = floatArrayOf(
             -1f, -1f,
             1f, -1f,
@@ -88,9 +92,34 @@ class IdentityShaderProgram :
         const val FRAGMENT_SHADER = """
             precision mediump float;
             uniform sampler2D uTexSampler;
+            uniform float uSplitX;
+            uniform float uSharpenAmount;
+            uniform vec2 uTexelSize;
             varying vec2 vTexCoords;
+
             void main() {
-              gl_FragColor = texture2D(uTexSampler, vTexCoords);
+              vec4 original = texture2D(uTexSampler, vTexCoords);
+              float dist = vTexCoords.x - uSplitX;
+
+              if (dist < 0.0) {
+                gl_FragColor = original;
+                return;
+              }
+
+              vec4 neighborSum =
+                  texture2D(uTexSampler, vTexCoords + vec2(uTexelSize.x, 0.0)) +
+                  texture2D(uTexSampler, vTexCoords - vec2(uTexelSize.x, 0.0)) +
+                  texture2D(uTexSampler, vTexCoords + vec2(0.0, uTexelSize.y)) +
+                  texture2D(uTexSampler, vTexCoords - vec2(0.0, uTexelSize.y));
+              vec4 blurred = neighborSum * 0.25;
+              vec4 sharpened = clamp(original + (original - blurred) * uSharpenAmount * 2.0, 0.0, 1.0);
+
+              float lineHalfWidth = uTexelSize.x * 1.5;
+              if (dist < lineHalfWidth) {
+                gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+              } else {
+                gl_FragColor = sharpened;
+              }
             }
         """
     }

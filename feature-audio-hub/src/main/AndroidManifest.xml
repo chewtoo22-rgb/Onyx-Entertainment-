@@ -4,6 +4,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Required by android.media.audiofx.Visualizer even at the global (session 0) capture
+         used by SystemAudioVisualizerCapture; the AudioEffect classes above do not need it. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application>
         <service
